@@ -22,7 +22,7 @@ jobs:
         run: |
           pwd
           ls -la
-          find . -maxdepth 3 \( -name "package.json" -o -name "package-lock.json" \)
+          find . -maxdepth 3 -name "package.json" -o -name "package-lock.json"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -64,6 +64,13 @@ jobs:
         run: |
           cd apps/mobile/android
           ./gradlew assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-trade-ai-debug-apk
+          path: apps/mobile/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14          ./gradlew assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
