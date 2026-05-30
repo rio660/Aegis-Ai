@@ -36,8 +36,11 @@ jobs:
         run: npm test -- --run
         continue-on-error: true
 
-      - name: Build app
-        run: npm run build
+      - name: Build web/mobile app
+        run: |
+          npm run build
+          npm run build --workspace @aegis/mobile
+          test -f apps/mobile/dist/index.html
 
       - name: Setup Java
         uses: actions/setup-java@v4
