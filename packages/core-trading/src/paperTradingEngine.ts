@@ -1,0 +1,2 @@
+export interface PaperTrade { id:string; asset:string; side:'LONG'|'SHORT'; entry:number; stopLoss:number; takeProfit?:number; openedAt:string; closedAt?:string; exit?:number; }
+export class PaperTradingEngine { private trades: PaperTrade[]=[]; open(t: Omit<PaperTrade,'id'|'openedAt'>){ if(!t.stopLoss) throw new Error('STOP_LOSS_REQUIRED'); const trade={...t,id:crypto.randomUUID(),openedAt:new Date().toISOString()}; this.trades.push(trade); return trade; } list(){ return this.trades; } }

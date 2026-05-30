@@ -1,0 +1,5 @@
+export interface Candle { time:number; open:number; high:number; low:number; close:number; volume:number; }
+export function sma(values: number[], period: number): number[] { return values.map((_,i)=> i+1<period ? NaN : values.slice(i+1-period,i+1).reduce((a,b)=>a+b,0)/period); }
+export function ema(values: number[], period: number): number[] { const k=2/(period+1); const out:number[]=[]; values.forEach((v,i)=> out[i]= i===0 ? v : v*k + out[i-1]*(1-k)); return out; }
+export function rsi(values: number[], period = 14): number[] { const out = Array(values.length).fill(NaN); for (let i=period;i<values.length;i++){ let gain=0, loss=0; for(let j=i-period+1;j<=i;j++){ const d=values[j]-values[j-1]; if(d>=0) gain+=d; else loss-=d; } const rs = loss === 0 ? 100 : gain/loss; out[i]=100-(100/(1+rs)); } return out; }
+export function atr(candles: Candle[], period = 14): number[] { const trs = candles.map((c,i)=> i===0 ? c.high-c.low : Math.max(c.high-c.low, Math.abs(c.high-candles[i-1].close), Math.abs(c.low-candles[i-1].close))); return sma(trs, period); }

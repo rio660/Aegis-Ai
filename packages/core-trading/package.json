@@ -1,0 +1,1 @@
+{"name":"@aegis/core-trading","version":"1.0.0","type":"module","main":"dist/index.js","types":"dist/index.d.ts","scripts":{"build":"tsc -b"},"dependencies":{"@aegis/shared-types":"1.0.0","@aegis/safety":"1.0.0"}}
