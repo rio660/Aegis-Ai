@@ -1,0 +1,11 @@
+import { BotRunner, BotStorage, loginAdmin, setupAdminPin } from '@aegis/admin-bot';
+export class AdminModeController {
+    storage = new BotStorage();
+    runner = new BotRunner(this.storage);
+    setupPin(pin) { setupAdminPin(this.storage, pin); }
+    login(pin) { return loginAdmin(this.storage, pin); }
+    configure(input) { this.storage.secrets = { ...this.storage.secrets, ...input }; this.storage.addAudit('ADMIN_CONFIG_UPDATED', { adminCount: input.adminTelegramIds.length }); }
+    startBot() { this.runner.start(); }
+    stopBot() { this.runner.stop(); }
+    status() { return { connected: Boolean(this.storage.secrets.botToken), polling: this.runner.loop?.isRunning() ?? false, lastUpdateTimestamp: new Date().toISOString(), currentUpdateOffset: this.storage.updateOffset, totalPendingRequests: [...this.storage.requests.values()].filter(r => r.status === 'PENDING').length, totalApprovedRequests: [...this.storage.requests.values()].filter(r => r.status === 'APPROVED').length, totalDeniedRequests: this.storage.denied.size, totalIssuedLicenses: this.storage.issued.size, totalRevokedRecords: this.storage.revoked.size }; }
+}

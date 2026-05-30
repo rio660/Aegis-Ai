@@ -1,0 +1,36 @@
+import { validateRequestCode } from '@aegis/licensing';
+import { isAdminTelegramId } from './admin-guard.js';
+import { RateLimiter } from './rate-limit.js';
+export class CommandRouter {
+    storage;
+    approvals;
+    send;
+    invalidLimiter = new RateLimiter(5, 60 * 60 * 1000);
+    requestLimiter = new RateLimiter(10, 60 * 60 * 1000);
+    constructor(storage, approvals, send) {
+        this.storage = storage;
+        this.approvals = approvals;
+        this.send = send;
+    }
+    async handleMessage(msg) { const text = (msg.text ?? '').trim(); const from = String(msg.from?.id ?? msg.chat.id); if (text === '/start')
+        return this.send(msg.chat.id, 'Welcome to Aegis Trade AI activation bot. Send your activation request code from the app.'); if (text === '/help')
+        return this.send(msg.chat.id, 'Send an AEGIS-REQ activation request code. Admin approval is required.'); if (text === '/status')
+        return this.send(msg.chat.id, `Pending requests: ${[...this.storage.requests.values()].filter(r => r.status === 'PENDING').length}`); if (text.startsWith('/approve') && !isAdminTelegramId(this.storage, from))
+        return this.send(msg.chat.id, 'Admin only.'); if (text.startsWith('AEGIS-REQ.')) {
+        if (!this.requestLimiter.allow(from))
+            return this.send(msg.chat.id, 'Too many activation requests. Try again later.');
+        try {
+            validateRequestCode(text);
+            const rec = this.approvals.receiveRequest(text, from, msg.from?.username ?? null);
+            await this.send(msg.chat.id, 'Activation request received. Waiting for admin approval.');
+            for (const adminId of this.storage.secrets.adminTelegramIds)
+                await this.send(adminId, `New activation request received.\nrequestId: ${rec.request.requestId}\nusername: ${rec.telegramUsername ?? '-'}\nTelegram user ID: ${rec.telegramUserId}\nplatform: ${rec.request.platform}\napp version: ${rec.request.appVersion}\ndevice: ${rec.request.deviceHash.slice(0, 12)}…`);
+        }
+        catch {
+            if (!this.invalidLimiter.allow(from))
+                return this.send(msg.chat.id, 'Too many invalid codes. Try again later.');
+            return this.send(msg.chat.id, 'Invalid activation request code. Open Aegis Trade AI and copy the full request code.');
+        }
+        return;
+    } return this.send(msg.chat.id, 'Invalid activation request code. Open Aegis Trade AI and copy the full request code.'); }
+}

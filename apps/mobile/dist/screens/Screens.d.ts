@@ -1,0 +1,13 @@
+export declare function Welcome(): any;
+export declare function ActivationSuccess(): any;
+export declare function LicenseActive(): any;
+export declare function LicenseInvalid(): any;
+export declare function LicenseExpired(): any;
+export declare function DeviceMismatch(): any;
+export declare function Dashboard(): any;
+export declare function Analysis(): any;
+export declare function PaperTrading(): any;
+export declare function Journal(): any;
+export declare function Backtest(): any;
+export declare function Performance(): any;
+export declare function Settings(): any;

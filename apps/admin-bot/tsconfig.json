@@ -29,7 +29,6 @@
         "../../apps/admin-bot/src/index.ts"
       ]
     },
-    "ignoreDeprecations": "6.0"
   },
   "include": [
     "src"
