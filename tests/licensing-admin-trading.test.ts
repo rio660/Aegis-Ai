@@ -1,0 +1,40 @@
+import { describe, expect, it } from 'vitest';
+import { ALL_FEATURES } from '@aegis/shared-types';
+import { createRequestCode, generateKeyPair, getDeviceHash, getOrCreateDeviceId, hashActivationKey, isFeatureEnabled, MemoryStorage, parseRequestCode, validateRequestCode, verifyActivationKey, verifyStoredLicenseOnLaunch } from '@aegis/licensing';
+import { ApprovalService, BotStorage, CommandRouter, loginAdmin, RateLimiter, setupAdminPin } from '@aegis/admin-bot';
+import { atr, ema, rsi, sma, classifyMarketRegime, calculateRisk } from '@aegis/core-trading';
+import { enforceTradeSafety, guardText } from '@aegis/safety';
+
+async function fixture() {
+  const storage = new MemoryStorage();
+  const deviceId = await getOrCreateDeviceId(storage);
+  const reqCode = createRequestCode({ deviceId, appVersion:'1.0.0', platform:'android' });
+  const req = parseRequestCode(reqCode);
+  const keypair = generateKeyPair('k1');
+  const adminStore = new BotStorage();
+  adminStore.secrets.privateKeyPem = keypair.privateKeyPem; adminStore.secrets.publicKeyPem = keypair.publicKeyPem; adminStore.secrets.activeKeyId = 'k1'; adminStore.secrets.adminTelegramIds=['99'];
+  const approvals = new ApprovalService(adminStore);
+  approvals.receiveRequest(reqCode, '42', 'alice');
+  const issued = approvals.approve(req.requestId, {plan:'PRO',features:ALL_FEATURES,expiresAt:null,adminTelegramId:'99'});
+  return { storage, deviceId, reqCode, req, keypair, adminStore, approvals, issued };
+}
+
+describe('licensing', () => {
+  it('generates and persists device IDs', async () => { const s=new MemoryStorage(); const a=await getOrCreateDeviceId(s); const b=await getOrCreateDeviceId(s); expect(a).toMatch(/[0-9a-f-]{36}/); expect(b).toBe(a); });
+  it('generates, parses, and rejects malformed or expired request codes', () => { const code=createRequestCode({deviceId:'d1',appVersion:'1.0.0',platform:'android'}); const parsed=parseRequestCode(code); expect(parsed.deviceHash).toBe(getDeviceHash('d1')); expect(()=>parseRequestCode('bad')).toThrow(); const expired=createRequestCode({deviceId:'d1',appVersion:'1.0.0',platform:'android',createdAt:new Date(Date.now()-25*60*60*1000).toISOString()}); expect(() => validateRequestCode(expired)).toThrow(); });
+  it('generates and verifies activation keys, persists license, stores hash not raw key, and skips activation screen', async () => { const f=await fixture(); const result=await verifyActivationKey({activationKey:f.issued.activationKey,deviceId:f.deviceId,appVersion:'1.0.0',publicKeys:{k1:f.keypair.publicKeyPem},storage:f.storage}); expect(result.status).toBe('ACTIVE'); expect(await verifyStoredLicenseOnLaunch(f.storage,f.deviceId,'1.0.0',{k1:f.keypair.publicKeyPem})).toBe('ACTIVE'); expect((await f.storage.getItem('aegis.license'))!).toContain(hashActivationKey(f.issued.activationKey)); expect((await f.storage.getItem('aegis.license'))!).not.toContain(f.issued.activationKey); });
+  it('rejects tampered, wrong device, expired licenses, duplicate local redemption, and cleared storage requires reactivation', async () => { const f=await fixture(); expect((await verifyActivationKey({activationKey:f.issued.activationKey+'x',deviceId:f.deviceId,appVersion:'1.0.0',publicKeys:{k1:f.keypair.publicKeyPem}})).status).not.toBe('ACTIVE'); expect((await verifyActivationKey({activationKey:f.issued.activationKey,deviceId:'other',appVersion:'1.0.0',publicKeys:{k1:f.keypair.publicKeyPem}})).status).toBe('DEVICE_MISMATCH'); await verifyActivationKey({activationKey:f.issued.activationKey,deviceId:f.deviceId,appVersion:'1.0.0',publicKeys:{k1:f.keypair.publicKeyPem},storage:f.storage}); expect((await verifyActivationKey({activationKey:f.issued.activationKey,deviceId:f.deviceId,appVersion:'1.0.0',publicKeys:{k1:f.keypair.publicKeyPem},storage:f.storage})).status).toBe('TAMPERED_STORAGE'); const fresh=new MemoryStorage(); expect(await verifyStoredLicenseOnLaunch(fresh,f.deviceId,'1.0.0',{k1:f.keypair.publicKeyPem})).toBe('MISSING'); });
+  it('rejects expired license and gates features', async () => { const f=await fixture(); const req2=createRequestCode({deviceId:f.deviceId,appVersion:'1.0.0',platform:'android'}); const parsed=parseRequestCode(req2); f.approvals.receiveRequest(req2,'42','alice'); const exp=f.approvals.approve(parsed.requestId,{plan:'DEMO',features:['market_dashboard'],expiresAt:new Date(Date.now()-1000).toISOString(),adminTelegramId:'99'}); expect((await verifyActivationKey({activationKey:exp.activationKey,deviceId:f.deviceId,appVersion:'1.0.0',publicKeys:{k1:f.keypair.publicKeyPem}})).status).toBe('EXPIRED'); const payload=(await verifyActivationKey({activationKey:f.issued.activationKey,deviceId:f.deviceId,appVersion:'1.0.0',publicKeys:{k1:f.keypair.publicKeyPem}})).storedLicense!.licensePayload; expect(isFeatureEnabled(payload,'backtesting')).toBe(true); expect(isFeatureEnabled({features:['market_dashboard']},'backtesting')).toBe(false); });
+});
+
+describe('admin mode and bot security', () => {
+  it('stores hashed PIN, blocks wrong PIN, and locks after repeated failures', () => { const s=new BotStorage(); setupAdminPin(s,'123456'); expect(s.secrets.pinHash).not.toContain('123456'); expect(loginAdmin(s,'bad')).toBe(false); for(let i=0;i<4;i++) loginAdmin(s,'bad'); expect(s.secrets.lockUntil).toBeTruthy(); expect(loginAdmin(s,'123456')).toBe(false); });
+  it('blocks duplicate approval and explicit reissue creates a new license ID and nonce', async () => { const f=await fixture(); expect(()=>f.approvals.approve(f.req.requestId,{plan:'PRO',features:ALL_FEATURES,expiresAt:null,adminTelegramId:'99'})).toThrow('DUPLICATE'); const old=[...f.adminStore.issued.values()][0].license; f.approvals.approve(f.req.requestId,{plan:'PRO',features:ALL_FEATURES,expiresAt:null,adminTelegramId:'99',reissue:true}); const records=[...f.adminStore.issued.values()].map(r=>r.license); expect(records.at(-1)!.licenseId).not.toBe(old.licenseId); expect(records.at(-1)!.activationNonce).not.toBe(old.activationNonce); });
+  it('keeps bot token/private key out of user licensing package source names', async () => { const fs=await import('node:fs'); const src=fs.readFileSync('packages/licensing/src/index.ts','utf8'); expect(src).not.toMatch(/botToken|privateKeyPem/); });
+  it('prevents non-admin approval command and rate-limits invalid request codes and stores update offsets', async () => { const s=new BotStorage(); s.secrets.adminTelegramIds=['99']; const sent:string[]=[]; const router=new CommandRouter(s,new ApprovalService(s),async(_id,text)=>{sent.push(text)}); await router.handleMessage({text:'/approve abc',chat:{id:1},from:{id:1}}); expect(sent.at(-1)).toBe('Admin only.'); const limiter=new RateLimiter(1,1000); expect(limiter.allow('u')).toBe(true); expect(limiter.allow('u')).toBe(false); s.setOffset(123); expect(s.updateOffset).toBe(123); });
+});
+
+describe('trading safety and indicators', () => {
+  it('rejects dangerous claims and unsafe trade construction', () => { expect(guardText('I want 100% winrate').allowed).toBe(false); expect(guardText('profit guaranteed').allowed).toBe(false); expect(guardText('risk-free').allowed).toBe(false); expect(enforceTradeSafety({decision:'CANDIDATE_BUY',entry:10,takeProfit:12}).decision).toBe('NO_TRADE'); expect(calculateRisk({accountEquity:1000,riskPct:0.01,entry:10,stopLoss:9,takeProfit:11,decision:'CANDIDATE_BUY'}).decision).toMatch(/WAIT|NO_TRADE/); expect(enforceTradeSafety({decision:'CANDIDATE_BUY',stopLoss:9,recommendationText:'all in'}).blockedReasons).toContain('BLOCKED_CLAIM'); expect(enforceTradeSafety({decision:'CANDIDATE_BUY',stopLoss:9,usesMartingale:true}).blockedReasons).toContain('MARTINGALE_BLOCKED'); });
+  it('calculates RSI, ATR, SMA, EMA and classifies market regime', () => { const values=Array.from({length:60},(_,i)=>i+1); expect(sma(values,5).at(-1)).toBe(58); expect(ema(values,5).at(-1)).toBeGreaterThan(55); expect(rsi(values,14).at(-1)).toBeGreaterThan(90); const candles=values.map((v,i)=>({time:i,open:v,high:v+1,low:v-1,close:v,volume:100})); expect(atr(candles,14).at(-1)).toBeGreaterThan(1); expect(classifyMarketRegime(candles)).toBe('UPTREND'); });
+});

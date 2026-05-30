@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "composite": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@aegis/shared-types": [
+        "../../packages/shared-types/src/index.ts"
+      ],
+      "@aegis/licensing": [
+        "../../packages/licensing/src/index.ts"
+      ],
+      "@aegis/safety": [
+        "../../packages/safety/src/index.ts"
+      ],
+      "@aegis/core-trading": [
+        "../../packages/core-trading/src/index.ts"
+      ],
+      "@aegis/admin-bot": [
+        "../../apps/admin-bot/src/index.ts"
+      ]
+    },
+    "ignoreDeprecations": "6.0"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../shared-types"
+    }
+  ]
+}

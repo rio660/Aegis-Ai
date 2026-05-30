@@ -1,0 +1,4 @@
+import type { TelegramClient, TelegramUpdate } from './telegram-client.js';
+import type { BotStorage } from './bot-storage.js';
+import type { CommandRouter } from './command-router.js';
+export class UpdateLoop { private stopped=true; constructor(private client:TelegramClient, private storage:BotStorage, private router:CommandRouter){} start(){ this.stopped=false; void this.loop(); } stop(){ this.stopped=true; } isRunning(){ return !this.stopped; } private async loop(){ while(!this.stopped){ try { const updates=await this.client.getUpdates(this.storage.updateOffset,25); for(const u of updates) await this.process(u); } catch { await new Promise(r=>setTimeout(r,1500)); } } } private async process(update:TelegramUpdate){ if(this.storage.processedUpdates.has(update.update_id)) return; this.storage.processedUpdates.add(update.update_id); this.storage.setOffset(update.update_id+1); if(update.message) await this.router.handleMessage(update.message); } }
